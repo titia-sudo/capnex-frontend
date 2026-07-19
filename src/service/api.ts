@@ -1,4 +1,4 @@
-const BASE_URL = 'http://capnex-backend.onrender.com/api'
+const BASE_URL = 'https://capnex-backend.onrender.com/api'
 
 function getToken(): string | null {
   return localStorage.getItem('capnex_token')

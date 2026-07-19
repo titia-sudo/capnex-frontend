@@ -12,7 +12,7 @@ export function connecterWebSocket() {
   if (client?.active) return
 
   client = new Client({
-    webSocketFactory: () => new SockJS('http://localhost:8080/ws'),
+    webSocketFactory: () => new SockJS('http://capnex-backend.onrender.com/ws'),
     reconnectDelay: 5000,
 
     onConnect: () => {

@@ -1,4 +1,3 @@
-import React from 'react'
 import StatutVip from './StatutVip'
 
 type Role = 'user' | 'admin'

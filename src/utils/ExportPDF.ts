@@ -93,7 +93,7 @@ export function exportPortefeuillePDF(positions: Position[]) {
     const pnl = valeurActuelle - valeurEntree
     const pnlPct = valeurEntree > 0 ? (pnl / valeurEntree) * 100 : 0
     const sizing = getSizing(p.ticker)
-    const sizingLabel = sizing === 3 ? '3X Fort' : sizing === 2 ? '2X Achat' : sizing === 1 ? '1X Faible' : '0X Sortir'
+    const sizingLabel = sizing === 4 ? '4X Fort' : sizing === 3 ? '3X Bon' : sizing === 2 ? '2X Moyen' : '1X Faible'
 
     return [
       p.ticker,
@@ -135,9 +135,9 @@ export function exportPortefeuillePDF(positions: Position[]) {
           }
         }
         if (col === 7) {
-          if (val === '0X Sortir') data.cell.styles.textColor = [220, 38, 38]
-          else if (val === '3X Fort') data.cell.styles.textColor = [16, 185, 129]
-          else if (val === '2X Achat') data.cell.styles.textColor = [59, 130, 246]
+          if (val === '1X Sortir') data.cell.styles.textColor = [220, 38, 38]
+          else if (val === '4X Fort') data.cell.styles.textColor = [16, 185, 129]
+          else if (val === '3X Achat') data.cell.styles.textColor = [59, 130, 246]
           else data.cell.styles.textColor = [245, 158, 11]
         }
       }

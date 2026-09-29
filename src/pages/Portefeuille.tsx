@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getActifsCache } from '../service/actifsStore'
+import { getActifsCache, getPrixActuel, getSizingActif } from '../service/actifsStore'
 import { exportPortefeuillePDF } from '../utils/ExportPDF'
 import { portefeuilleAPI } from '../service/api'
 
@@ -7,6 +7,7 @@ interface PortefeuilleItem {
   id: number
   nom: string
   capitalInitial: number
+  cashDisponible: number
   createdAt: string
 }
 
@@ -16,6 +17,7 @@ interface Position {
   lots: number
   prixEntree: number
   dateEntree: string
+  sizingEntree: number
 }
 
 interface CloturResult {
@@ -24,18 +26,12 @@ interface CloturResult {
   prixEntree: number
   prixSortie: number
   capital: number
+  montantSortie: number
   pnl: number
   perf: number
-  sizing: string
+  sizingEntree: string
+  cashDisponible?: number
   message: string
-}
-
-function getPrixActuel(ticker: string): number {
-  return getActifsCache().find((a: any) => a.ticker === ticker)?.prix ?? 0
-}
-
-function getSizing(ticker: string): number {
-  return getActifsCache().find((a: any) => a.ticker === ticker)?.sizing ?? 1
 }
 
 // ── TOAST ──
@@ -80,11 +76,22 @@ function ClotureModal({ position, onCloturer, onClose }: {
   onClose: () => void
 }) {
   const prixActuel = getPrixActuel(position.ticker)
-  const [prixSortie, setPrixSortie] = useState(String(prixActuel || position.prixEntree))
+
+  const [prixSortie, setPrixSortie] = useState(
+    String(prixActuel ?? position.prixEntree)
+  )
 
   const prixVal = Number(prixSortie)
-  const pnl = position.lots * (prixVal - position.prixEntree)
-  const perf = ((prixVal - position.prixEntree) / position.prixEntree) * 100
+
+  const pnl =
+    position.lots *
+    (prixVal - position.prixEntree)
+
+  const perf =
+    ((prixVal - position.prixEntree) /
+      position.prixEntree) *
+    100
+
   const isPos = pnl >= 0
 
   return (
@@ -102,7 +109,11 @@ function ClotureModal({ position, onCloturer, onClose }: {
             <span>Prix entrée</span><span className="text-white">{position.prixEntree.toLocaleString()} XOF</span>
           </div>
           <div className="flex justify-between text-gray-400">
-            <span>Prix actuel</span><span className="text-white">{prixActuel.toLocaleString()} XOF</span>
+            <span className="text-white">
+              {prixActuel !== null
+                ? `${prixActuel.toLocaleString()} XOF`
+                : 'Indisponible'}
+            </span>
           </div>
         </div>
         <div>
@@ -133,73 +144,261 @@ function ClotureModal({ position, onCloturer, onClose }: {
 }
 
 // ── POSITION CARD ──
-function PositionCard({ position, onSupprimer, onCloturer }: {
+function PositionCard({ position, onCloturer }: {
   position: Position
-  onSupprimer: (id: number) => void
   onCloturer: (position: Position) => void
 }) {
+
   const prixActuel = getPrixActuel(position.ticker)
-  const sizing = getSizing(position.ticker)
-  const valeurEntree = position.lots * position.prixEntree
-  const valeurActuelle = position.lots * prixActuel
-  const pnl = valeurActuelle - valeurEntree
-  const pnlPct = valeurEntree > 0 ? (pnl / valeurEntree) * 100 : 0
-  const isPositif = pnl >= 0
-  const isAlerteSort = sizing === 1
+  const sizingActuel = getSizingActif(position.ticker)
+
+  const valeurEntree =
+    position.lots * position.prixEntree
+
+  const valeurActuelle =
+    prixActuel !== null
+      ? position.lots * prixActuel
+      : null
+
+  const pnl =
+    valeurActuelle !== null
+      ? valeurActuelle - valeurEntree
+      : null
+
+  const pnlPct =
+    pnl !== null && valeurEntree > 0
+      ? (pnl / valeurEntree) * 100
+      : null
+
+  const isPositif =
+    pnl !== null && pnl >= 0
+
+  const isAlerteSort =
+    sizingActuel === 1
+
+  const sizingDegrade =
+    sizingActuel !== null &&
+    sizingActuel < position.sizingEntree
+  const getSizingStyle = (sizing: number) => {
+    switch (sizing) {
+      case 4:
+        return 'bg-purple-500/15 text-purple-400 border-purple-500/30'
+      case 3:
+        return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+      case 2:
+        return 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+      case 1:
+        return 'bg-red-500/15 text-red-400 border-red-500/30'
+      default:
+        return 'bg-gray-800 text-gray-400 border-gray-700'
+    }
+  }
 
   return (
-    <div className={`bg-gray-900 rounded-2xl border p-4 space-y-3 ${isAlerteSort ? 'border-red-500/60' : 'border-gray-800'}`}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="font-mono font-black text-white text-lg">{position.ticker}</span>
-          {isAlerteSort && (
-            <span className="bg-red-500/20 border border-red-500 text-red-400 text-xs font-bold px-2 py-0.5 rounded-lg animate-pulse">
-              ⚠ FAIBLE
+    <div
+      className={`bg-gray-900 rounded-2xl border p-5 transition-colors ${isAlerteSort
+        ? 'border-red-500/60'
+        : sizingDegrade
+          ? 'border-amber-500/30'
+          : 'border-gray-800'
+        }`}
+    >
+
+      {/* ── EN-TÊTE ── */}
+      <div className="flex items-start justify-between gap-4">
+
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="font-mono font-black text-white text-xl">
+              {position.ticker}
+            </span>
+
+            {isAlerteSort && (
+              <span className="bg-red-500/15 border border-red-500/40 text-red-400 text-[10px] font-black px-2 py-1 rounded-lg">
+                ⚠ ALERTE SORTIE
+              </span>
+            )}
+          </div>
+
+          <div className="text-gray-500 text-xs mt-1">
+            Position ouverte
+          </div>
+        </div>
+
+        {/* PERFORMANCE */}
+        <div className="text-right">
+
+          {pnlPct !== null && pnl !== null ? (
+            <>
+              <div
+                className={`text-xl font-black ${isPositif
+                  ? 'text-emerald-400'
+                  : 'text-red-400'
+                  }`}
+              >
+                {isPositif ? '+' : ''}
+                {pnlPct.toFixed(1)}%
+              </div>
+
+              <div
+                className={`text-xs font-bold mt-0.5 ${isPositif
+                  ? 'text-emerald-400'
+                  : 'text-red-400'
+                  }`}
+              >
+                {isPositif ? '+' : ''}
+                {pnl.toLocaleString(undefined, {
+                  maximumFractionDigits: 0
+                })}{' '}
+                XOF
+              </div>
+            </>
+          ) : (
+            <div className="text-gray-500 text-sm font-bold">
+              Données indisponibles
+            </div>
+          )}
+
+        </div>
+      </div>
+
+      {/* ── SIZING ── */}
+      <div className="mt-4 flex items-center gap-3">
+
+        <div>
+          <div className="text-gray-600 text-[10px] uppercase tracking-wide mb-1">
+            Entrée
+          </div>
+
+          <span
+            className={`inline-flex items-center border rounded-lg px-3 py-1 text-xs font-black ${getSizingStyle(
+              position.sizingEntree
+            )}`}
+          >
+            {position.sizingEntree}X
+          </span>
+        </div>
+
+        <div className="text-gray-600 mt-4">
+          →
+        </div>
+
+        <div>
+          <div className="text-gray-600 text-[10px] uppercase tracking-wide mb-1">
+            Actuel
+          </div>
+
+          {sizingActuel !== null ? (
+            <span
+              className={`inline-flex items-center border rounded-lg px-3 py-1 text-xs font-black ${getSizingStyle(
+                sizingActuel
+              )}`}
+            >
+              {sizingActuel}X
+            </span>
+          ) : (
+            <span className="inline-flex items-center border border-gray-700 rounded-lg px-3 py-1 text-xs font-bold text-gray-500">
+              Indisponible
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => onCloturer(position)}
-            className="text-xs bg-orange-500/20 text-orange-400 border border-orange-500/40 px-3 py-1.5 rounded-xl hover:bg-orange-500/30 transition-colors font-bold">
-            Clôturer
-          </button>
-          <button onClick={() => onSupprimer(position.id)}
-            className="text-gray-600 hover:text-red-400 transition-colors text-xl leading-none">
-            ×
-          </button>
-        </div>
+
+        {sizingDegrade && !isAlerteSort && (
+          <div className="mt-4 text-amber-400 text-xs font-bold">
+            ↓ Dégradation
+          </div>
+        )}
+
       </div>
 
-      <div className="grid grid-cols-3 gap-2 text-center">
-        <div className="bg-gray-800 rounded-xl p-2">
-          <div className="text-white font-bold">{position.lots}</div>
-          <div className="text-gray-500 text-xs">Lots</div>
-        </div>
-        <div className="bg-gray-800 rounded-xl p-2">
-          <div className="text-white font-bold text-sm">{position.prixEntree.toLocaleString()}</div>
-          <div className="text-gray-500 text-xs">Prix entrée</div>
-        </div>
-        <div className="bg-gray-800 rounded-xl p-2">
-          <div className="text-white font-bold text-sm">{prixActuel.toLocaleString()}</div>
-          <div className="text-gray-500 text-xs">Prix actuel</div>
-        </div>
-      </div>
+      {/* ── INFORMATIONS POSITION ── */}
+      <div className="grid grid-cols-3 gap-2 mt-5">
 
-      <div className={`rounded-xl p-3 flex items-center justify-between ${isPositif ? 'bg-orange-500/10 border border-orange-500/30' : 'bg-red-500/10 border border-red-500/30'}`}>
-        <div>
-          <div className="text-gray-400 text-xs mb-1">P&L</div>
-          <div className={`font-black text-lg ${isPositif ? 'text-emerald-400' : 'text-red-400'}`}>
-            {isPositif ? '+' : ''}{pnl.toLocaleString()} XOF
+        <div className="bg-gray-950/60 border border-gray-800 rounded-xl p-3 text-center">
+          <div className="text-white font-black">
+            {position.lots.toLocaleString()}
+          </div>
+
+          <div className="text-gray-600 text-[10px] mt-1 uppercase">
+            Quantité
           </div>
         </div>
-        <div className={`text-2xl font-black ${isPositif ? 'text-emerald-400' : 'text-red-400'}`}>
-          {isPositif ? '+' : ''}{pnlPct.toFixed(1)}%
+
+        <div className="bg-gray-950/60 border border-gray-800 rounded-xl p-3 text-center">
+          <div className="text-white font-black text-sm">
+            {position.prixEntree.toLocaleString()}
+          </div>
+
+          <div className="text-gray-600 text-[10px] mt-1 uppercase">
+            Prix entrée
+          </div>
         </div>
+
+        <div className="bg-gray-950/60 border border-gray-800 rounded-xl p-3 text-center">
+          <div className="text-white font-black text-sm">
+            {prixActuel !== null
+              ? prixActuel.toLocaleString()
+              : '—'}
+          </div>
+
+          <div className="text-gray-600 text-[10px] mt-1 uppercase">
+            Prix actuel
+          </div>
+        </div>
+
       </div>
 
-      <div className="text-gray-600 text-xs text-right">
-        Valeur actuelle : {valeurActuelle.toLocaleString()} XOF
+      {/* ── VALEUR / CAPITAL ── */}
+      <div className="mt-4 pt-4 border-t border-gray-800 grid grid-cols-2 gap-4">
+
+        <div>
+          <div className="text-gray-500 text-xs">
+            Capital investi
+          </div>
+
+          <div className="text-white font-bold mt-1">
+            {valeurEntree.toLocaleString()} XOF
+          </div>
+        </div>
+
+        <div className="text-right">
+          <div className="text-gray-500 text-xs">
+            Valeur actuelle
+          </div>
+
+          <div className="text-white font-black mt-1">
+            {valeurActuelle !== null
+              ? `${valeurActuelle.toLocaleString()} XOF`
+              : '—'}
+          </div>
+        </div>
+
       </div>
+
+      {/* ── ACTION ── */}
+      <div className="mt-4 flex justify-end">
+
+        <button
+          onClick={() => onCloturer(position)}
+          className="
+            bg-orange-500/10
+            hover:bg-orange-500/20
+            text-orange-400
+            border
+            border-orange-500/30
+            px-4
+            py-2
+            rounded-xl
+            text-xs
+            font-bold
+            transition-colors
+          "
+        >
+          Clôturer la position
+        </button>
+
+      </div>
+
     </div>
   )
 }
@@ -321,6 +520,7 @@ function VuePositions({ portefeuille, onRetour }: {
   const [showModal, setShowModal] = useState(false)
   const [positionACloturer, setPositionACloturer] = useState<Position | null>(null)
   const [toastResult, setToastResult] = useState<CloturResult | null>(null)
+  const [cashDisponible, setCashDisponible] = useState(portefeuille.cashDisponible)
 
   useEffect(() => {
     chargerPositions()
@@ -336,6 +536,7 @@ function VuePositions({ portefeuille, onRetour }: {
         lots: p.lots,
         prixEntree: p.prixEntree,
         dateEntree: p.dateEntree,
+        sizingEntree: p.sizingEntree,
       })))
     } catch (e) {
       console.error(e)
@@ -344,19 +545,23 @@ function VuePositions({ portefeuille, onRetour }: {
     }
   }
 
-  const ajouterPosition = async (p: { ticker: string; lots: number; prixEntree: number; portefeuilleId: number }) => {
+  const ajouterPosition = async (p: {
+    ticker: string
+    lots: number
+    prixEntree: number
+    portefeuilleId: number
+  }) => {
     try {
       await portefeuilleAPI.ajouterPosition(p)
-      await chargerPositions()
-    } catch (e) {
-      console.error(e)
-    }
-  }
 
-  const supprimerPosition = async (id: number) => {
-    try {
-      await portefeuilleAPI.supprimerPosition(id)
-      setPositions(prev => prev.filter(p => p.id !== id))
+      const montantPosition = p.lots * p.prixEntree
+
+      setCashDisponible(prev =>
+        prev - montantPosition
+      )
+
+      await chargerPositions()
+
     } catch (e) {
       console.error(e)
     }
@@ -364,18 +569,43 @@ function VuePositions({ portefeuille, onRetour }: {
 
   const cloturerPosition = async (prixSortie: number) => {
     if (!positionACloturer) return
+
     try {
-      const result = await portefeuilleAPI.cloturer(positionACloturer.id, prixSortie)
-      setPositions(prev => prev.filter(p => p.id !== positionACloturer.id))
+      const result = await portefeuilleAPI.cloturer(
+        positionACloturer.id,
+        prixSortie
+      )
+
+      setPositions(prev =>
+        prev.filter(p => p.id !== positionACloturer.id)
+      )
+
+      // Mise à jour immédiate du cash retourné par le backend
+      if (result.cashDisponible !== undefined) {
+        setCashDisponible(result.cashDisponible)
+      }
+
       setToastResult(result)
       setPositionACloturer(null)
+
     } catch (e) {
       console.error(e)
     }
   }
 
   const totalInvesti = positions.reduce((s, p) => s + p.lots * p.prixEntree, 0)
-  const totalActuel = positions.reduce((s, p) => s + p.lots * getPrixActuel(p.ticker), 0)
+  const totalActuel = positions.reduce(
+    (s, p) => {
+      const prix = getPrixActuel(p.ticker)
+
+      return s + (
+        prix !== null
+          ? p.lots * prix
+          : 0
+      )
+    },
+    0
+  )
   const totalPnl = totalActuel - totalInvesti
   const totalPnlPct = totalInvesti > 0 ? (totalPnl / totalInvesti) * 100 : 0
   const isPositif = totalPnl >= 0
@@ -414,41 +644,132 @@ function VuePositions({ portefeuille, onRetour }: {
         {loading && <div className="text-center py-20 text-gray-600">Chargement...</div>}
 
         {!loading && (
-  <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
-    <div className="grid grid-cols-3 gap-3 text-center">
-      <div>
-        <div className="text-gray-400 text-xs mb-1">Capital initial</div>
-        <div className="text-white font-bold text-sm">{portefeuille.capitalInitial.toLocaleString()}</div>
-        <div className="text-gray-500 text-xs">XOF</div>
-      </div>
-      <div>
-        <div className="text-gray-400 text-xs mb-1">Investi</div>
-        <div className="text-white font-bold text-sm">{totalInvesti.toLocaleString()}</div>
-        <div className="text-gray-500 text-xs">XOF</div>
-      </div>
-      <div>
-        <div className="text-gray-400 text-xs mb-1">Cash restant</div>
-        <div className={`font-bold text-sm ${(portefeuille.capitalInitial - totalInvesti) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-          {(portefeuille.capitalInitial - totalInvesti).toLocaleString()}
-        </div>
-        <div className="text-gray-500 text-xs">XOF</div>
-      </div>
-    </div>
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
 
-    {positions.length > 0 && (
-      <div className={`mt-3 pt-3 border-t border-gray-800 flex items-center justify-between`}>
-        <span className="text-gray-400 text-xs">P&L global</span>
-        <span className={`font-black text-lg ${isPositif ? 'text-emerald-400' : 'text-red-400'}`}>
-          {isPositif ? '+' : ''}{totalPnl.toLocaleString(undefined, { maximumFractionDigits: 0 })} XOF
-          <span className="text-sm ml-2">({isPositif ? '+' : ''}{totalPnlPct.toFixed(1)}%)</span>
-        </span>
-      </div>
-    )}
-  </div>
-)}
+            {/* ── VALEUR PRINCIPALE ── */}
+            <div className="p-5">
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+
+                {/* VALEUR ACTUELLE */}
+                <div>
+                  <div className="text-gray-500 text-xs uppercase tracking-wide">
+                    Valeur actuelle des positions
+                  </div>
+
+                  <div className="text-white text-2xl font-black mt-1">
+                    {totalActuel.toLocaleString(undefined, {
+                      maximumFractionDigits: 0
+                    })}{' '}
+                    XOF
+                  </div>
+                </div>
+
+                {/* P&L LATENT */}
+                <div className="sm:text-right">
+
+                  <div className="text-gray-500 text-xs uppercase tracking-wide">
+                    P&L latent
+                  </div>
+
+                  <div
+                    className={`text-2xl font-black mt-1 ${isPositif
+                      ? 'text-emerald-400'
+                      : 'text-red-400'
+                      }`}
+                  >
+                    {isPositif ? '+' : ''}
+                    {totalPnl.toLocaleString(undefined, {
+                      maximumFractionDigits: 0
+                    })}{' '}
+                    XOF
+                  </div>
+
+                  <div
+                    className={`text-sm font-bold ${isPositif
+                      ? 'text-emerald-400'
+                      : 'text-red-400'
+                      }`}
+                  >
+                    {isPositif ? '+' : ''}
+                    {totalPnlPct.toFixed(2)} %
+                  </div>
+
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* ── INFORMATIONS SECONDAIRES ── */}
+            <div className="border-t border-gray-800 bg-gray-950/30 p-4">
+
+              <div className="grid grid-cols-3 gap-3 text-center">
+
+                {/* CAPITAL INITIAL */}
+                <div>
+                  <div className="text-gray-600 text-[10px] uppercase tracking-wide">
+                    Capital initial
+                  </div>
+
+                  <div className="text-white font-bold text-sm mt-1">
+                    {portefeuille.capitalInitial.toLocaleString()}
+                  </div>
+
+                  <div className="text-gray-600 text-[10px]">
+                    XOF
+                  </div>
+                </div>
+
+                {/* INVESTI */}
+                <div>
+                  <div className="text-gray-600 text-[10px] uppercase tracking-wide">
+                    Investi
+                  </div>
+
+                  <div className="text-white font-bold text-sm mt-1">
+                    {totalInvesti.toLocaleString()}
+                  </div>
+
+                  <div className="text-gray-600 text-[10px]">
+                    XOF
+                  </div>
+                </div>
+
+                {/* CASH */}
+                {/* CASH */}
+                <div>
+                  <div className="text-gray-600 text-[10px] uppercase tracking-wide">
+                    Cash disponible
+                  </div>
+
+                  <div
+                    className={`font-bold text-sm mt-1 ${cashDisponible >= 0
+                      ? 'text-emerald-400'
+                      : 'text-red-400'
+                      }`}
+                  >
+                    {cashDisponible.toLocaleString()}
+                  </div>
+
+                  <div className="text-gray-600 text-[10px]">
+                    XOF
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+        )}
+        {/* Positions ouvertes */}
         {!loading && positions.map(p => (
-          <PositionCard key={p.id} position={p} onSupprimer={supprimerPosition} onCloturer={setPositionACloturer} />
+          <PositionCard
+            key={p.id}
+            position={p}
+            onCloturer={setPositionACloturer}
+          />
         ))}
 
         {!loading && positions.length === 0 && (
@@ -482,7 +803,9 @@ function VuePositions({ portefeuille, onRetour }: {
 }
 
 // ── PAGE PRINCIPALE — LISTE DES PORTEFEUILLES ──
-export default function Portefeuille() {
+type PortefeuilleProps = { onOpenSubscription: () => void }
+
+export default function Portefeuille({ onOpenSubscription, }: PortefeuilleProps) {
   const [portefeuilles, setPortefeuilles] = useState<PortefeuilleItem[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreer, setShowCreer] = useState(false)
@@ -500,9 +823,19 @@ export default function Portefeuille() {
         id: p.id,
         nom: p.nom,
         capitalInitial: p.capitalInitial,
+        cashDisponible: p.cashDisponible,
         createdAt: p.createdAt,
       })))
     } catch (e) {
+      if (
+        e instanceof Error &&
+        e.message.includes("abonnement VIP actif")
+      ) {
+
+        onOpenSubscription()
+        return
+      }
+
       console.error(e)
     } finally {
       setLoading(false)

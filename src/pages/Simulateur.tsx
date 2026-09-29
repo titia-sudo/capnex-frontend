@@ -1,78 +1,40 @@
 import { useState } from 'react'
-import { getActifsCache } from '../service/actifsStore'
-import { portefeuilleAPI } from '../service/api'
+import { portefeuilleAPI, simulationAPI, type SimulationOptimiseeResponse, } from '../service/api'
 
-interface PositionSim {
-  ticker: string
-  nom: string
-  sizing: number
-  prix: number
-  lots: number
-  montant: number
-}
-
-interface SimResult {
-  capitalDepart: number
-  unite1X: number
-  positions: PositionSim[]
-  capitalAlloue: number
-  capitalRestant: number
-  totalPositions: number
-}
 
 export default function Simulateur() {
   const [nomPortefeuille, setNomPortefeuille] = useState('')
   const [capital, setCapital] = useState('')
-  const [result, setResult] = useState<SimResult | null>(null)
+  const [result, setResult] = useState<SimulationOptimiseeResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [erreur, setErreur] = useState('')
 
-  const actifs = getActifsCache()
-
-  const calculerAllocation = () => {
+  const calculerAllocation = async () => {
     const cap = Number(capital)
-    if (!cap || cap <= 0) return setErreur('Entre un capital valide')
-    if (!nomPortefeuille.trim()) return setErreur('Donne un nom à ton portefeuille')
+
+    if (!cap || cap <= 0) {
+      return setErreur('Entre un capital valide')
+    }
+
+    if (!nomPortefeuille.trim()) {
+      return setErreur('Donne un nom à ton portefeuille')
+    }
+
     setErreur('')
+    setLoading(true)
 
-    const eligibles = actifs.filter((a: any) => a.sizing > 1)
-    const totalUnites = eligibles.reduce((s: number, a: any) => s + (a.sizing - 1), 0)
+    try {
+      const simulation = await simulationAPI.simulerOptimisee(cap)
 
-    if (totalUnites === 0) return setErreur('Aucun actif éligible actuellement')
+      setResult(simulation)
+      setSuccess(false)
 
-    const unite1X = Math.floor(cap / totalUnites)
-
-    const positions: PositionSim[] = eligibles
-      .map((a: any) => {
-        const sizingEffectif = a.sizing - 1
-        const montant = unite1X * sizingEffectif
-        const lots = Math.floor(montant / a.prix)
-        const montantReel = lots * a.prix
-        return {
-          ticker: a.ticker,
-          nom: a.nom,
-          sizing: a.sizing,
-          prix: a.prix,
-          lots,
-          montant: montantReel,
-        }
-      })
-      .filter((p: PositionSim) => p.lots > 0)
-      .sort((a: PositionSim, b: PositionSim) => b.sizing - a.sizing)
-
-    const capitalAlloue = positions.reduce((s, p) => s + p.montant, 0)
-    const capitalRestant = cap - capitalAlloue
-
-    setResult({
-      capitalDepart: cap,
-      unite1X,
-      positions,
-      capitalAlloue,
-      capitalRestant,
-      totalPositions: positions.length,
-    })
-    setSuccess(false)
+    } catch (e: any) {
+      setErreur(e.message || 'Erreur lors de la simulation')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const creerPortefeuille = async () => {
@@ -87,8 +49,9 @@ export default function Simulateur() {
         capitalInitial: result.capitalDepart,
         positions: result.positions.map(p => ({
           ticker: p.ticker,
-          lots: p.lots,
+          lots: p.quantite,
           prixEntree: p.prix,
+          sizingEntree: p.sizingEffectif,
         }))
       })
       setSuccess(true)
@@ -108,7 +71,7 @@ export default function Simulateur() {
   }
 
   const SIZING_LABEL: Record<number, string> = {
-    4: '3X', 3: '2X', 2: '1X', 1: '0X'
+    4: '4X', 3: '3X', 2: '2X', 1: '1X'
   }
 
   const SIZING_COLOR: Record<number, string> = {
@@ -170,13 +133,6 @@ export default function Simulateur() {
               placeholder="Ex: 5 000 000"
               className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white text-lg font-bold focus:outline-none focus:border-orange-500 transition-colors"
             />
-            {capital && Number(capital) > 0 && actifs.filter((a: any) => a.sizing > 1).length > 0 && (
-              <p className="text-gray-500 text-xs mt-1">
-                Unité 1X estimée ≈ {Math.floor(
-                  Number(capital) / actifs.filter((a: any) => a.sizing > 1).reduce((s: number, a: any) => s + (a.sizing - 1), 0)
-                ).toLocaleString()} XOF
-              </p>
-            )}
           </div>
 
           {erreur && <p className="text-red-400 text-sm">{erreur}</p>}
@@ -207,33 +163,56 @@ export default function Simulateur() {
                 <div className="text-white font-black text-sm truncate">{nomPortefeuille}</div>
               </div>
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 text-center">
-                <div className="text-gray-500 text-xs mb-1">Unité 1X</div>
-                <div className="text-amber-400 font-black text-lg">{result.unite1X.toLocaleString()}</div>
-                <div className="text-gray-600 text-xs">XOF</div>
+                <div className="text-gray-500 text-xs mb-1">
+                  Réserve
+                </div>
+
+                <div className="text-amber-400 font-black text-lg">
+                  {result.reserve.toLocaleString()}
+                </div>
+
+                <div className="text-gray-600 text-xs">
+                  XOF · 8%
+                </div>
               </div>
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 text-center">
-                <div className="text-gray-500 text-xs mb-1">Capital alloué</div>
-                <div className="text-emerald-400 font-black text-lg">{result.capitalAlloue.toLocaleString()}</div>
-                <div className="text-gray-600 text-xs">XOF · {((result.capitalAlloue / result.capitalDepart) * 100).toFixed(1)}%</div>
+                <div className="text-gray-500 text-xs mb-1">
+                  Capital alloué
+                </div>
+
+                <div className="text-emerald-400 font-black text-lg">
+                  {result.capitalAlloue.toLocaleString()}
+                </div>
+
+                <div className="text-gray-600 text-xs">
+                  XOF · {((result.capitalAlloue / result.capitalDepart) * 100).toFixed(1)}%
+                </div>
               </div>
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 text-center">
-                <div className="text-gray-500 text-xs mb-1">Positions</div>
-                <div className="text-white font-black text-lg">{result.totalPositions}</div>
-                <div className="text-gray-600 text-xs">actifs sélectionnés</div>
+              <div className="text-white font-black text-lg">
+                {result.nombreLignesRetenues}
+              </div>
+
+              <div className="text-gray-600 text-xs">
+                sur {result.nombreLignesCible} lignes cible
               </div>
             </div>
 
             {/* Cash restant */}
-            {result.capitalRestant > 0 && (
+            {result.cashRestant > 0 && (
               <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 flex items-center justify-between">
-                <span className="text-gray-400 text-sm">Cash restant</span>
-                <span className="text-white font-bold">{result.capitalRestant.toLocaleString()} XOF</span>
+                <span className="text-gray-400 text-sm">
+                  Cash restant
+                </span>
+
+                <span className="text-white font-bold">
+                  {result.cashRestant.toLocaleString()} XOF
+                </span>
               </div>
             )}
 
             {/* Liste positions par sizing */}
             {[4, 3, 2].map(s => {
-              const posSize = result.positions.filter(p => p.sizing === s)
+              const posSize = result.positions.filter(p => p.sizingEffectif === s)
               if (posSize.length === 0) return null
               return (
                 <div key={s} className={`border rounded-2xl overflow-hidden ${SIZING_BG[s]}`}>
@@ -255,7 +234,7 @@ export default function Simulateur() {
                             <span className="text-gray-500 text-xs">{p.nom}</span>
                           </div>
                           <div className="text-gray-600 text-xs mt-0.5">
-                            {p.lots} lots × {p.prix.toLocaleString()} XOF
+                            {p.quantite} titres × {p.prix.toLocaleString()} XOF
                           </div>
                         </div>
                         <div className="text-right">
@@ -282,7 +261,7 @@ export default function Simulateur() {
               <div className="bg-emerald-500/20 border border-emerald-500 rounded-2xl p-4 text-center space-y-2">
                 <div className="text-emerald-400 font-black text-lg">✅ Portefeuille créé !</div>
                 <p className="text-gray-400 text-sm">
-                  "{nomPortefeuille}" — {result.totalPositions} positions dans ton Portefeuille
+                  "{nomPortefeuille}" — {result.nombreLignesRetenues} positions dans ton Portefeuille
                 </p>
                 <button onClick={reset} className="text-emerald-400 text-sm hover:text-emerald-300 transition-colors">
                   Nouvelle simulation →

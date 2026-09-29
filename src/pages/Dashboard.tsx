@@ -78,7 +78,7 @@ export default function Dashboard() {
   const [modalSizing, setModalSizing] = useState<Sizing | null>(null)
 
   const actifs: Actif[] = getActifsCache()
-  const bySize = (s: Sizing) => actifs.filter(a => a.sizing === s)
+  const bySize = (s: Sizing) => actifs.filter(a => Number(a.sizing) === s)
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -97,21 +97,21 @@ export default function Dashboard() {
         <div className="grid grid-cols-4 gap-3">
           <div className="bg-gray-900 rounded-xl p-3 text-center border border-gray-800">
             <div className="text-2xl font-black text-emerald-400">{bySize(4).length}</div>
-            <div className="text-gray-500 text-xs mt-1">3X Fort</div>
+            <div className="text-gray-500 text-xs mt-1">4X Fort</div>
           </div>
           <div className="bg-gray-900 rounded-xl p-3 text-center border border-gray-800">
             <div className="text-2xl font-black text-blue-400">{bySize(3).length}</div>
-            <div className="text-gray-500 text-xs mt-1">2X Bon</div>
+            <div className="text-gray-500 text-xs mt-1">3X Bon</div>
           </div>
           <div className="bg-gray-900 rounded-xl p-3 text-center border border-gray-800">
             <div className="text-2xl font-black text-amber-400">{bySize(2).length}</div>
-            <div className="text-gray-500 text-xs mt-1">1X Moyen</div>
+            <div className="text-gray-500 text-xs mt-1">2X Moyen</div>
           </div>
           <div className={`rounded-xl p-3 text-center border ${bySize(1).length > 0 ? 'bg-red-500/10 border-red-500/50 animate-pulse' : 'bg-gray-900 border-gray-800'}`}>
             <div className={`text-2xl font-black ${bySize(1).length > 0 ? 'text-red-400' : 'text-gray-600'}`}>
               {bySize(1).length}
             </div>
-            <div className="text-gray-500 text-xs mt-1">⚠ 0X Faible</div>
+            <div className="text-gray-500 text-xs mt-1">⚠ 1X Faible</div>
           </div>
         </div>
 

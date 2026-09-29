@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
-import { chargerActifs, mettreAJourPrix } from './service/actifsStore'
-import { connecterWebSocket, deconnecterWebSocket, onPrixUpdate, onAlerteUpdate } from './service/websocket'
-import { alertesAPI } from './service/api'
+import { useEffect, useState } from 'react'
+
+import Header from './Components/Header'
+import BottomNavigation from './Components/BottomNavigation'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Scanner from './pages/Scanner'
@@ -13,167 +13,631 @@ import Mentions from './pages/Mentions'
 import Simulateur from './pages/Simulateur'
 import Graphiques from './pages/Graphiques'
 import Formation from './pages/Formation'
+import Subscription from './pages/Subscription'
+import AdminDashboard from './pages/admin/AdminDashboard'
+import AdminLayout from './pages/admin/AdminLayout'
 
-type Page = 'dashboard' | 'scanner' | 'portefeuille' | 'analyse' | 'performance' | 'alertes' | 'notes' | 'mentions' | 'simulateur' | 'graphiques' | 'formation'
-type Role = 'user' | 'analyste'
+import {
+  chargerActifs,
+  mettreAJourPrix,
+} from './service/actifsStore'
+
+import {
+  connecterWebSocket,
+  deconnecterWebSocket,
+  onPrixUpdate,
+  onAlerteUpdate,
+} from './service/websocket'
+
+import {
+  alertesAPI,
+  subscriptionsAPI,
+  type SubscriptionResponse,
+} from './service/api'
+
+type Page =
+  | 'dashboard'
+  | 'scanner'
+  | 'portefeuille'
+  | 'analyse'
+  | 'performance'
+  | 'alertes'
+  | 'mentions'
+  | 'simulateur'
+  | 'graphiques'
+  | 'formation'
+  | 'subscription'
+  | 'admin'
+
+type Role = 'user' | 'admin'
 
 export default function App() {
+
+  /*
+   * ============================
+   * UTILISATEUR CONNECTÉ
+   * ============================
+   */
+
   const [role, setRole] = useState<Role | null>(() => {
     const user = localStorage.getItem('capnex_user')
-    if (user) {
-      const parsed = JSON.parse(user)
-      return parsed.role === 'ANALYSTE' ? 'analyste' : 'user'
+
+    if (!user) {
+      return null
     }
-    return null
+
+    try {
+      const parsed = JSON.parse(user)
+
+      return parsed.role === 'ADMIN'
+        ? 'admin'
+        : 'user'
+
+    } catch {
+      return null
+    }
   })
+
   const [nom, setNom] = useState<string>(() => {
     const user = localStorage.getItem('capnex_user')
-    return user ? JSON.parse(user).nom : ''
+
+    if (!user) {
+      return ''
+    }
+
+    try {
+      return JSON.parse(user).nom ?? ''
+    } catch {
+      return ''
+    }
   })
-  const [page, setPage] = useState<Page>('dashboard')
-  const [actifsCharges, setActifsCharges] = useState(false)
-  const [, forceUpdate] = useState(0)
-  const [nonLues, setNonLues] = useState(0)
+
+  /*
+   * ============================
+   * NAVIGATION
+   * ============================
+   */
+
+  const [page, setPage] = useState<Page>(() => {
+    const user = localStorage.getItem('capnex_user')
+
+    if (!user) {
+      return 'dashboard'
+    }
+
+    try {
+      const parsed = JSON.parse(user)
+
+      return parsed.role === 'ADMIN'
+        ? 'admin'
+        : 'dashboard'
+    } catch {
+      return 'dashboard'
+    }
+  })
+
+  /*
+   * ============================
+   * DONNÉES GLOBALES
+   * ============================
+   */
+
+  const [actifsCharges, setActifsCharges] =
+    useState(false)
+
+  const [, forceUpdate] =
+    useState(0)
+
+  const [nonLues, setNonLues] =
+    useState(0)
+
+  /*
+   * ============================
+   * ABONNEMENT
+   * ============================
+   */
+
+  const [vipActif, setVipActif] =
+    useState(false)
+
+  const [vipCharge, setVipCharge] =
+    useState(false)
+
+  const [
+    currentSubscription,
+    setCurrentSubscription,
+  ] = useState<SubscriptionResponse | null>(null)
+
+  /*
+   * ============================
+   * 1. CHARGEMENT DES ACTIFS
+   * ============================
+   */
 
   useEffect(() => {
-    chargerActifs().then(() => setActifsCharges(true))
+
+    const initialiserActifs = async () => {
+      try {
+
+        await chargerActifs()
+
+        setActifsCharges(true)
+
+      } catch (error) {
+
+        console.error(
+          'Impossible de charger les actifs',
+          error
+        )
+      }
+    }
+
+    void initialiserActifs()
+
   }, [])
 
-  useEffect(() => {
-    if (!role) return
+  /*
+   * ============================
+   * 2. CHARGEMENT ABONNEMENT
+   * ============================
+   */
 
-    // Charger le count initial des alertes
-    alertesAPI.getCount().then(d => setNonLues(d.nonLues)).catch(() => {})
+  useEffect(() => {
+
+    if (!role) {
+
+      setVipActif(false)
+      setVipCharge(false)
+      setCurrentSubscription(null)
+
+      return
+    }
+
+    /*
+     * Un ADMIN n'a pas besoin
+     * d'une souscription VIP.
+     */
+    if (role === 'admin') {
+
+      setVipActif(false)
+      setVipCharge(true)
+      setCurrentSubscription(null)
+
+      return
+    }
+
+    const chargerAbonnement = async () => {
+
+      try {
+
+        setVipCharge(false)
+
+        const subscription =
+          await subscriptionsAPI.getCurrent()
+
+        setCurrentSubscription(
+          subscription
+        )
+
+        setVipActif(
+          subscription.valid
+        )
+
+      } catch {
+
+        /*
+         * Aucun abonnement :
+         * utilisateur FREE.
+         */
+        setCurrentSubscription(null)
+        setVipActif(false)
+
+      } finally {
+
+        setVipCharge(true)
+      }
+    }
+
+    void chargerAbonnement()
+
+  }, [role])
+
+  /*
+   * ============================
+   * 3. ALERTES + WEBSOCKET
+   * ============================
+   */
+
+  useEffect(() => {
+
+    if (!role) {
+      return
+    }
+
+    const chargerAlertes = async () => {
+
+      try {
+
+        const data =
+          await alertesAPI.getCount()
+
+        setNonLues(
+          data.nonLues
+        )
+
+      } catch (error) {
+
+        console.error(
+          'Impossible de charger les alertes',
+          error
+        )
+      }
+    }
+
+    void chargerAlertes()
 
     connecterWebSocket()
 
-    const unsubPrix = onPrixUpdate((prix) => {
-      mettreAJourPrix(prix)
-      forceUpdate(n => n + 1)
-    })
+    const unsubPrix =
+      onPrixUpdate(prix => {
 
-    const unsubAlerte = onAlerteUpdate(() => {
-      alertesAPI.getCount().then(d => setNonLues(d.nonLues)).catch(() => {})
-    })
+        mettreAJourPrix(prix)
+
+        forceUpdate(
+          valeur => valeur + 1
+        )
+      })
+
+    const unsubAlerte =
+      onAlerteUpdate(() => {
+
+        void chargerAlertes()
+      })
 
     return () => {
+
       unsubPrix()
       unsubAlerte()
+
       deconnecterWebSocket()
     }
+
   }, [role])
 
-  const handleLogin = (r: Role, _token: string, n: string) => {
-    setRole(r)
-    setNom(n)
-    chargerActifs().then(() => setActifsCharges(true))
+  /*
+   * ============================
+   * LOGIN
+   * ============================
+   */
+
+  const handleLogin = (
+    nouveauRole: Role,
+    _token: string,
+    nouveauNom: string
+  ) => {
+
+    setRole(nouveauRole)
+
+    setNom(nouveauNom)
+
+    /*
+     * Un ADMIN arrive directement
+     * sur son tableau d'administration.
+     */
+    setPage(
+      nouveauRole === 'admin'
+        ? 'admin'
+        : 'dashboard'
+    )
   }
+
+  /*
+   * ============================
+   * LOGOUT
+   * ============================
+   */
 
   const handleLogout = () => {
-    localStorage.removeItem('capnex_token')
-    localStorage.removeItem('capnex_user')
+
+    localStorage.removeItem(
+      'capnex_token'
+    )
+
+    localStorage.removeItem(
+      'capnex_user'
+    )
+
     setRole(null)
     setNom('')
+
     setPage('dashboard')
+
+    setVipActif(false)
+    setVipCharge(false)
+
+    setCurrentSubscription(null)
+
+    setNonLues(0)
   }
 
-  if (!role) return <Login onLogin={handleLogin} />
+  const actualiserAbonnement = async (): Promise<boolean> => {
+
+    try {
+
+      const subscription =
+        await subscriptionsAPI.getCurrent()
+
+      setCurrentSubscription(subscription)
+
+      setVipActif(subscription.valid)
+
+      return subscription.valid
+
+    } catch (error) {
+
+      console.error(
+        "Impossible d'actualiser l'abonnement",
+        error
+      )
+
+      return false
+    }
+  }
+
+  /*
+   * ============================
+   * UTILISATEUR NON CONNECTÉ
+   * ============================
+   */
+
+  if (!role) {
+    return (
+      <Login
+        onLogin={handleLogin}
+      />
+    )
+  }
+
+  /*
+   * ============================
+   * CHARGEMENT INITIAL
+   * ============================
+   */
 
   if (!actifsCharges) {
+
     return (
+
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+
         <div className="text-center space-y-3">
-          <div className="text-emerald-400 text-2xl font-black">CAPNEX PRO</div>
-          <div className="text-gray-500 text-sm">Chargement des cours BRVM...</div>
+
+          <div className="text-emerald-400 text-2xl font-black">
+            CAPNEX PRO
+          </div>
+
+          <div className="text-gray-500 text-sm">
+            Chargement des cours BRVM...
+          </div>
+
         </div>
+
       </div>
     )
   }
 
-  const navUser = [
-    { id: 'dashboard', label: '📊', title: 'Dashboard' },
-    { id: 'portefeuille', label: '💼', title: 'Portefeuille' },
-    { id: 'performance', label: '📈', title: 'Perf' },
-    { id: 'simulateur', label: '🧮', title: 'Simul.' },
-    { id: 'graphiques', label: '📉', title: 'Charts' },
-    {
-      id: 'alertes',
-      label: (
-        <div className="relative inline-block">
-          <span>🔔</span>
-          {nonLues > 0 && (
-            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">
-              {nonLues > 9 ? '9+' : nonLues}
-            </span>
-          )}
-        </div>
-      ),
-      title: 'Alertes'
-    },
-    // { id: 'notes', label: '📝', title: 'Notes' },
-    { id: 'mentions', label: 'ℹ', title: 'Infos' },
-    { id: 'formation', label: '✏️', title: 'Formation' },
-  ]
-
-  const navAnalyste = [
-    ...navUser,
-    { id: 'scanner', label: '🔍', title: 'Scanner' },
-    { id: 'analyse', label: '🧠', title: 'Analyse' },
-  ]
-
-  const nav = role === 'analyste' ? navAnalyste : navUser
+  /*
+   * ============================
+   * AFFICHAGE
+   * ============================
+   */
 
   return (
+
     <div>
-      {/* Header */}
-      <div className="fixed top-0 left-0 right-0 bg-gray-900 border-b border-gray-800 z-40 px-4 py-2">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-        <span className="text-orange-400 font-black text-sm">CAPNEX PRO</span>
-          <div className="flex items-center gap-3">
-            <span className="text-gray-500 text-xs">{nom}</span>
-            <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${role === 'analyste' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
-              {role === 'analyste' ? 'ANALYSTE' : 'USER'}
-            </span>
-            <button onClick={handleLogout} className="text-gray-600 hover:text-red-400 text-xs transition-colors">
-              Déconnexion
-            </button>
-          </div>
-        </div>
-      </div>
 
-      {/* Nav bottom */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 z-50">
-        <div className="flex overflow-x-auto">
-          {nav.map(n => (
-            <button
-              key={n.id}
-              onClick={() => setPage(n.id as Page)}
-              className={`flex-1 min-w-[52px] py-2 flex flex-col items-center gap-0.5 transition-colors ${page === n.id ? 'text-emerald-400' : 'text-gray-600 hover:text-gray-400'}`}
-            >
-              <span className="text-base">{n.label as React.ReactNode}</span>
-              <span className="text-[9px] font-bold">{n.title}</span>
-            </button>
-          ))}
-        </div>
-      </nav>
+      {/* HEADER */}
 
-      {/* Pages */}
+      <Header
+        nom={nom}
+        role={role}
+        vipActif={vipActif}
+        vipCharge={vipCharge}
+        onOpenSubscription={() =>
+          setPage('subscription')
+        }
+        onLogout={handleLogout}
+      />
+
+      {/* CONTENU */}
+
       <div className="pt-12 pb-16">
+
         {(() => {
-          if (page === 'dashboard') return <Dashboard />
-          if (page === 'portefeuille') return <Portefeuille />
-          if (page === 'performance') return <Performance />
-          if (page === 'simulateur') return <Simulateur />
-          if (page === 'graphiques') return <Graphiques />
-          if (page === 'alertes') return <Alertes />
-          // if (page === 'notes') return <Notes />
-          if (page === 'mentions') return <Mentions />
-          if (page === 'scanner' && role === 'analyste') return <Scanner />
-          if (page === 'analyse' && role === 'analyste') return <AnalysePrivee />
-          if (page === 'formation') return <Formation />
+
+          /*
+           * ADMIN
+           */
+          if (page === 'admin' && role === 'admin') {
+            return <AdminLayout />
+          }
+
+          /*
+           * Un ADMIN qui arrive sur une page
+           * utilisateur retourne au dashboard admin.
+           */
+          if (role === 'admin') {
+            return <AdminDashboard />
+          }
+
+          /*
+           * DASHBOARD
+           */
+          if (page === 'dashboard') {
+            return <Dashboard />
+          }
+
+          /*
+           * GRAPHIQUES
+           */
+          if (page === 'graphiques') {
+            return <Graphiques />
+          }
+
+          /*
+           * ALERTES
+           */
+          if (page === 'alertes') {
+            return <Alertes />
+          }
+
+          /*
+           * INFOS
+           */
+          if (page === 'mentions') {
+            return <Mentions />
+          }
+
+          /*
+           * FORMATION
+           */
+          if (page === 'formation') {
+            return <Formation />
+          }
+
+          /*
+           * MON ABONNEMENT
+           */
+          if (page === 'subscription') {
+
+            return (
+
+              <Subscription
+                currentSubscription={
+                  currentSubscription
+                }
+
+                onBack={() =>
+                  setPage('dashboard')
+                }
+
+                onSubscriptionActivated={async () => {
+
+                  const actif =
+                    await actualiserAbonnement()
+
+                  if (actif) {
+                    setPage('portefeuille')
+                  }
+                }}
+              />
+
+            )
+          }
+
+          /*
+           * ============================
+           * PAGES VIP
+           * ============================
+           */
+
+          if (
+            page === 'portefeuille'
+            && vipActif
+          ) {
+
+            return (
+
+              <Portefeuille
+                onOpenSubscription={() =>
+                  setPage('subscription')
+                }
+              />
+
+            )
+          }
+
+          if (
+            page === 'performance'
+            && vipActif
+          ) {
+            return <Performance />
+          }
+
+          if (
+            page === 'simulateur'
+            && vipActif
+          ) {
+            return <Simulateur />
+          }
+
+          if (
+            page === 'scanner'
+            && vipActif
+          ) {
+            return <Scanner />
+          }
+
+          if (
+            page === 'analyse'
+            && vipActif
+          ) {
+            return <AnalysePrivee />
+          }
+
+          /*
+           * Si un utilisateur FREE arrive
+           * malgré tout sur une page VIP,
+           * on lui affiche les offres.
+           */
+          if (
+            page === 'portefeuille'
+            || page === 'performance'
+            || page === 'simulateur'
+            || page === 'scanner'
+            || page === 'analyse'
+          ) {
+
+            return (
+
+              <Subscription
+                currentSubscription={
+                  currentSubscription
+                }
+
+                onBack={() =>
+                  setPage('dashboard')
+                }
+
+                onSubscriptionActivated={async () => {
+
+                  const actif = await actualiserAbonnement()
+
+                  if (actif) {
+                    setPage('portefeuille')
+                  }
+                }}
+              />
+
+            )
+          }
+
           return <Dashboard />
+
         })()}
+
       </div>
+
+      {/* NAVIGATION BAS */}
+
+      <BottomNavigation
+        role={role}
+        vipActif={vipActif}
+        page={page}
+        nonLues={nonLues}
+        onNavigate={setPage}
+      />
+
     </div>
   )
 }

@@ -14,7 +14,7 @@ interface Alerte {
 }
 
 const SIZING_LABEL: Record<number, string> = {
-  4: '3X Fort', 3: '2X Bon', 2: '1X Moyen', 1: '0X Faible'
+  4: '4X Fort', 3: '3X Bon', 2: '2X Moyen', 1: '1X Faible'
 }
 
 const SIZING_COLOR: Record<number, string> = {

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { authAPI } from '../service/api'
 
 interface LoginProps {
-  onLogin: (role: 'user' | 'analyste', token: string, nom: string) => void
+  onLogin: (role: 'user' | 'admin', token: string, nom: string) => void
 }
 
 export default function Login({ onLogin }: LoginProps) {
@@ -14,29 +14,69 @@ export default function Login({ onLogin }: LoginProps) {
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async () => {
-    if (!email || !password) return setErreur('Remplis tous les champs')
-    setLoading(true)
-    setErreur('')
+  if (!email || !password) {
+    setErreur('Remplis tous les champs')
+    return
+  }
 
-    try {
-      let res
-      if (mode === 'login') {
-        res = await authAPI.login(email, password)
-      } else {
-        if (!nom) return setErreur('Entre ton nom')
-        res = await authAPI.register(nom, email, password, 'USER')
-      }
+  if (mode === 'register' && !nom) {
+    setErreur('Entre ton nom')
+    return
+  }
 
-      localStorage.setItem('capnex_token', res.token)
-      localStorage.setItem('capnex_user', JSON.stringify({ email: res.email, nom: res.nom, role: res.role }))
+  setLoading(true)
+  setErreur('')
 
-      const role = res.role === 'ANALYSTE' ? 'analyste' : 'user'
-      onLogin(role, res.token, res.nom)
-    } catch (e: any) {
-      setErreur(e.message || 'Erreur de connexion')
+  try {
+    let res
+
+    if (mode === 'login') {
+      res = await authAPI.login(
+        email,
+        password
+      )
+    } else {
+      res = await authAPI.register(
+        nom,
+        email,
+        password
+      )
     }
+
+    localStorage.setItem(
+      'capnex_token',
+      res.token
+    )
+
+    localStorage.setItem(
+      'capnex_user',
+      JSON.stringify({
+        email: res.email,
+        nom: res.nom,
+        role: res.role,
+      })
+    )
+
+    const role =
+      res.role === 'ADMIN'
+        ? 'admin'
+        : 'user'
+
+    onLogin(
+      role,
+      res.token,
+      res.nom
+    )
+
+  } catch (e: any) {
+    setErreur(
+      e.message ||
+      'Erreur de connexion'
+    )
+  } finally {
     setLoading(false)
   }
+}
 
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
